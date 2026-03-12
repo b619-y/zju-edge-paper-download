@@ -2,8 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EDGE_BIN="/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
-PROFILE_DIR="/Users/b/Downloads/browser-use-local/persistent-edge/zju-edge-profile"
+eval "$(python3 "$SCRIPT_DIR/core/config.py" export-shell)"
+EDGE_BIN="$ZJU_EDGE_EDGE_BIN"
+PROFILE_DIR="$ZJU_EDGE_PROFILE_DIR"
 
 usage() {
   cat <<'EOF'

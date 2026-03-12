@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-EDGE_BIN="/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
-PROFILE_DIR="/Users/b/Downloads/browser-use-local/persistent-edge/zju-edge-profile"
-DOWNLOAD_DIR="/Users/b/Downloads/browser-use-local/output/downloads/zju-edge-persistent/final-pdfs"
-PORT="62777"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$(python3 "$SCRIPT_DIR/core/config.py" export-shell)"
+EDGE_BIN="$ZJU_EDGE_EDGE_BIN"
+PROFILE_DIR="$ZJU_EDGE_PROFILE_DIR"
+DOWNLOAD_DIR="$ZJU_EDGE_DOWNLOAD_DIR"
+PORT="$ZJU_EDGE_REMOTE_DEBUG_PORT"
 RESTART=0
 
 usage() {
@@ -69,12 +71,13 @@ if [[ "$RESTART" -eq 1 ]]; then
 fi
 
 if ! is_running || ! profile_process_running; then
-  python3 - <<'PY'
+  PROFILE_DIR="$PROFILE_DIR" DOWNLOAD_DIR="$DOWNLOAD_DIR" python3 - <<'PY'
 import json
+import os
 from pathlib import Path
 
-profile_dir = Path("/Users/b/Downloads/browser-use-local/persistent-edge/zju-edge-profile")
-download_dir = Path("/Users/b/Downloads/browser-use-local/output/downloads/zju-edge-persistent/final-pdfs")
+profile_dir = Path(os.environ["PROFILE_DIR"])
+download_dir = Path(os.environ["DOWNLOAD_DIR"])
 prefs_path = profile_dir / "Default" / "Preferences"
 prefs_path.parent.mkdir(parents=True, exist_ok=True)
 

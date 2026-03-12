@@ -1,6 +1,6 @@
 # zju-edge-paper-download
 
-面向 OpenClaw 的学术论文下载 skill 仓库，用于 `浙江大学机构访问 + 固定输出目录 + 出版商适配下载`。
+面向 OpenClaw 的学术论文下载 skill 仓库，用于 `浙江大学 WebVPN 访问 + 可配置输出目录 + 出版商适配下载`。
 
 [English README](./README.md)
 
@@ -8,10 +8,10 @@
 
 - 把当前流程包装成 OpenClaw 可以直接消费的 skill 仓库，而不是只适合 Codex 本地使用。
 - 复用已经登录好的浙江大学机构访问会话。
+- 走 WebVPN 机构访问链路，正常使用不需要打开 `aTrust`。
 - 默认在出版商机构选择页面优先选择 `Zhejiang University`。
 - 保留 ACS 的快速通道。
 - 提供 Nature、Science、ScienceDirect 的出版商适配下载逻辑。
-- 固定 PDF 输出目录，避免文件散落。
 - 把实际下载实现隔离在独立浏览器配置里，不污染主浏览器。
 
 ## OpenClaw 适配说明
@@ -24,25 +24,41 @@
 
 但需要明确一点：
 
-- 这个仓库里打包的实际下载实现，当前仍然是已经验证过的 `Edge + 持久登录态 + 固定下载目录` 链路。
+- 这个仓库里打包的实际下载实现，当前仍然是已经验证过的 `Edge + 持久登录态 + 可配置下载目录` 链路。
 - 也就是说，skill 入口是 OpenClaw 友好的，底层运行实现不是“纯 OpenClaw 浏览器自动化重写版”。
 
-## 已验证的固定路径
+## 配置方式
 
-- 持久浏览器 profile：
-  `/Users/b/Downloads/browser-use-local/persistent-edge/zju-edge-profile`
-- PDF 输出目录：
-  `/Users/b/Downloads/browser-use-local/output/downloads/zju-edge-persistent/final-pdfs`
-- 远程调试端口：
-  `62777`
+先复制配置模板：
+
+```bash
+cp .env.example .env
+```
+
+支持的变量：
+
+- `ZJU_EDGE_EDGE_BIN`
+  默认值：`/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge`
+- `ZJU_EDGE_PROFILE_DIR`
+  默认值：`./.local/edge-profile`
+- `ZJU_EDGE_DOWNLOAD_DIR`
+  默认值：`./output/final-pdfs`
+- `ZJU_EDGE_REMOTE_DEBUG_PORT`
+  默认值：`62777`
 
 ## 环境要求
 
 - macOS
 - OpenClaw 或任何能调用本地 shell / Python 脚本的兼容 skill 运行环境
 - Microsoft Edge，安装在 `/Applications/Microsoft Edge.app`
-- 已经可用的浙江大学机构访问流程
+- 已经可用的浙江大学 WebVPN 机构访问流程
 - Python 3
+
+## 访问说明
+
+- 本项目默认走浙江大学 WebVPN 机构访问。
+- 正常情况下不需要打开 `aTrust`。
+- 在全新 profile、登录态失效、或出版商触发风控时，第一次下载可能仍需要你在 Edge 里手动完成一次 WebVPN 刷新、机构登录跳转或人机验证。
 
 ## 用法
 
@@ -50,7 +66,15 @@
 
 把这个仓库 clone 或复制到 OpenClaw 的本地 skill 集合目录中。
 
-### 2. 启动或复用专用浏览器会话
+### 2. 配置本地路径
+
+```bash
+cp .env.example .env
+```
+
+如果你想改 Edge profile 路径、PDF 保存目录或调试端口，就编辑 `.env`。
+
+### 3. 启动或复用专用浏览器会话
 
 ```bash
 ./scripts/launch_edge.sh
@@ -62,7 +86,7 @@
 ./scripts/launch_edge.sh --restart
 ```
 
-### 3. 必要时刷新 ACS 机构登录
+### 4. 必要时刷新 ACS 机构登录
 
 ```bash
 ./scripts/login_acs.sh "10.1021/acs.est.6c01242"
@@ -70,7 +94,7 @@
 
 如果会话有效，会直接打开文章页；如果失效，就在浏览器里完成一次浙江大学登录。
 
-### 4. 下载论文 PDF
+### 5. 下载论文 PDF
 
 自动识别出版商：
 
@@ -95,6 +119,14 @@ python3 ./scripts/download.py \
   --from-file ./dois.txt
 ```
 
+按单次命令覆盖最终 PDF 保存目录：
+
+```bash
+python3 ./scripts/download.py \
+  --out-dir ./papers \
+  10.1021/acs.est.6c01242
+```
+
 兼容旧入口：
 
 ```bash
@@ -113,12 +145,13 @@ python3 ./scripts/download_dois.py \
   - 默认机构选择浙江大学
   - 优先传入 ScienceDirect article URL
   - 如果落到 challenge / download 页面，允许在当前会话里继续完成
+- 新 profile 的第一次下载，可能会因为登录态恢复或出版商人机验证而暂停一下。
 
 ## 输出文件
 
-PDF 默认写入：
+PDF 默认写入 `.env` 中 `ZJU_EDGE_DOWNLOAD_DIR` 指定的目录。
 
-`/Users/b/Downloads/browser-use-local/output/downloads/zju-edge-persistent/final-pdfs`
+如果命令行带了 `--out-dir`，脚本会在校验成功后把 PDF 移动到那个最终目录。
 
 成功后会重命名为稳定文件名，例如：
 
@@ -130,5 +163,5 @@ PDF 默认写入：
 
 - 仓库不存储校园账号密码。
 - 机构登录态只保存在独立浏览器 profile 中。
-- 不要把真实浏览器 profile、下载得到的 PDF、或其他本地运行产物提交到 GitHub。
+- 不要把 `.env`、真实浏览器 profile、下载得到的 PDF、或其他本地运行产物提交到 GitHub。
 - 如果以后需要真正改成纯 OpenClaw 浏览器执行栈，应当在文档里明确说明，不要把当前实现误写成完全不同的运行方式。

@@ -10,16 +10,19 @@ from typing import Callable
 from urllib.parse import quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
+from .config import load_settings
 from .models import DownloadPlan
 from .downloads import scan_pdfs, wait_for_pdf
 
 
-EDGE_BIN = "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
-PROFILE_DIR = Path("/Users/b/Downloads/browser-use-local/persistent-edge/zju-edge-profile")
 SKILL_DIR = Path(__file__).resolve().parents[2]
+SETTINGS = load_settings(SKILL_DIR)
+EDGE_BIN = SETTINGS.edge_bin
+PROFILE_DIR = SETTINGS.profile_dir
 LAUNCH_SCRIPT = SKILL_DIR / "scripts" / "launch_edge.sh"
-DEFAULT_OUT_DIR = Path("/Users/b/Downloads/browser-use-local/output/downloads/zju-edge-persistent/final-pdfs")
-REMOTE_DEBUG_LIST_URL = "http://127.0.0.1:62777/json/list"
+DEFAULT_OUT_DIR = SETTINGS.download_dir
+REMOTE_DEBUG_LIST_URL = SETTINGS.remote_debug_list_url
+REMOTE_DEBUG_NEW_URL = SETTINGS.remote_debug_new_url
 CDP_SCRIPT = SKILL_DIR / "scripts" / "core" / "cdp_command.js"
 
 
@@ -50,7 +53,7 @@ class EdgeDownloadSession:
     def open_url(self, url: str) -> None:
         self.arm_download_watch()
         encoded_url = quote(url, safe=":/?&=%+#")
-        req = Request(f"http://127.0.0.1:62777/json/new?{encoded_url}", method="PUT")
+        req = Request(f"{REMOTE_DEBUG_NEW_URL}?{encoded_url}", method="PUT")
         with urlopen(req, timeout=5) as response:
             response.read()
 
