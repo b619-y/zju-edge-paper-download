@@ -6,7 +6,6 @@ OpenClaw-oriented academic paper download skill for `Zhejiang University WebVPN 
 
 ## What It Solves
 
-- Packages the workflow as an OpenClaw-consumable skill repository instead of a Codex-only local skill.
 - Reuses the saved ZJU login state across runs.
 - Uses the WebVPN-backed institutional route; normal use does not require opening `aTrust`.
 - Treats `Zhejiang University` as the default institution when publisher flows ask for institutional access.
@@ -194,8 +193,3 @@ Successful downloads are renamed to stable file names derived from the DOI or ar
   - always download PDFs instead of previewing them
   - write downloads into the configured output folder
 - If a download does not start, the downloader opens the login or article page defined by the adapter and retries when applicable.
-- If you expose this repository through OpenClaw, keep the skill description aligned with the bundled scripts rather than claiming a different browser stack.
-
-## Publishing Notes
-
-Do not commit `.env`, the actual browser profile, or downloaded PDFs.
