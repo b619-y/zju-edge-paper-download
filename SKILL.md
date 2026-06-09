@@ -1,18 +1,18 @@
 ---
 name: zju-edge-paper-download
-description: Open Science/AAAS, Nature, PNAS, ACS, ScienceDirect, and APS paper pages and download article PDFs or supplementary files in the user's normal Microsoft Edge profile. Use WebVPN for Science/Nature/PNAS/ACS/ScienceDirect requests through ZJU WebVPN; use direct real-Edge access for APS because journals.aps.org is blocked by Cloudflare through WebVPN. Trigger on Science paper, Nature article, PNAS DOI, ACS DOI/article, ScienceDirect/Elsevier article or PII, APS/Physical Review DOI, science.org/nature.com/pnas.org/pubs.acs.org/sciencedirect.com/journals.aps.org URL, article PDF, supplement, supporting information, supplementary material, MMC, or related file.
+description: Open Science/AAAS, Nature, PNAS, ACS, ScienceDirect, and APS paper pages and download article PDFs or supplementary files in the user's current Microsoft Edge session. Use WebVPN for Science/Nature/PNAS/ACS/ScienceDirect requests through ZJU WebVPN; use direct real-Edge access for APS because journals.aps.org is blocked by Cloudflare through WebVPN. Trigger on Science paper, Nature article, PNAS DOI, ACS DOI/article, ScienceDirect/Elsevier article or PII, APS/Physical Review DOI, science.org/nature.com/pnas.org/pubs.acs.org/sciencedirect.com/journals.aps.org URL, article PDF, supplement, supporting information, supplementary material, MMC, or related file.
 ---
 
 # ZJU Edge Paper Download
 
 ## Overview
 
-Use the user's real Microsoft Edge session, not the dedicated ZJU persistent Edge profile. Drive WebVPN directly in the existing browser, prefer stable window/tab identification over front-window assumptions, and reuse publisher WebVPN proxy paths once `www.science.org`, `www.nature.com`, `www.pnas.org`, `pubs.acs.org`, or `www.sciencedirect.com` has been opened through WebVPN. Treat APS as an exception: use direct `journals.aps.org` access in real Edge, not WebVPN.
+Use the user's current Microsoft Edge session. Drive WebVPN directly in the existing browser, prefer stable window/tab identification over front-window assumptions, and reuse publisher WebVPN proxy paths once `www.science.org`, `www.nature.com`, `www.pnas.org`, `pubs.acs.org`, or `www.sciencedirect.com` has been opened through WebVPN. Treat APS as an exception: use direct `journals.aps.org` access in real Edge, not WebVPN.
 
 ## Operating Rules
 
-- Use AppleScript against `Microsoft Edge` for the normal user profile.
-- Do not invoke legacy dedicated-profile downloader scripts such as `launch_edge.sh` unless the user explicitly asks for that workflow.
+- Use AppleScript against `Microsoft Edge` in the user's existing browser session.
+- Use only the existing Edge windows and tabs the user operates.
 - Do not depend on `front window` or `active tab` until you have confirmed the target. Edge may have unrelated pages in front.
 - Enumerate Edge windows/tabs first, then bind operations to a specific window id and tab index.
 - For WebVPN's search box, keep the left protocol selector on `https` and put only the host/path in the input, for example `www.science.org/doi/10.1126/science.1096205`, `www.nature.com/articles/ncomms14183`, `www.pnas.org/doi/10.1073/pnas.1912154116`, `pubs.acs.org/doi/10.1021/acs.est.6c01242`, or `www.sciencedirect.com/science/article/pii/S0092867420302841`.
