@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZJU Edge Paper Download"
+  short_description: "Open publisher PDFs and supplements"
+  default_prompt: "Use $zju-edge-paper-download to open a Science, Nature, PNAS, ACS, ScienceDirect, or APS paper in real Microsoft Edge and download the article PDF or supplementary files."
