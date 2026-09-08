@@ -1,427 +1,94 @@
 ---
 name: zju-edge-paper-download
-description: Open Science/AAAS, Nature, PNAS, ACS, ScienceDirect, and APS paper pages and download article PDFs or supplementary files in the user's current Microsoft Edge session. Use WebVPN for Science/Nature/PNAS/ACS/ScienceDirect requests through ZJU WebVPN; use direct real-Edge access for APS because journals.aps.org is blocked by Cloudflare through WebVPN. Trigger on Science paper, Nature article, PNAS DOI, ACS DOI/article, ScienceDirect/Elsevier article or PII, APS/Physical Review DOI, science.org/nature.com/pnas.org/pubs.acs.org/sciencedirect.com/journals.aps.org URL, article PDF, supplement, supporting information, supplementary material, MMC, or related file.
+description: Use when OpenClaw needs to download publisher PDFs through Zhejiang University WebVPN institutional access with a configurable output directory, especially for ACS fast-path downloads or Nature, Science, and ScienceDirect article flows that reuse an existing logged-in browser session.
 ---
 
-# ZJU Edge Paper Download
+# ZJU OpenClaw Paper Download
 
-## Overview
+Use this skill when OpenClaw should drive a `Zhejiang University WebVPN access + configurable download directory + publisher adapter` paper-download workflow.
 
-Use the user's current Microsoft Edge session. Drive WebVPN directly in the existing browser, prefer stable window/tab identification over front-window assumptions, and reuse publisher WebVPN proxy paths once `www.science.org`, `www.nature.com`, `www.pnas.org`, `pubs.acs.org`, or `www.sciencedirect.com` has been opened through WebVPN. Treat APS as an exception: use direct `journals.aps.org` access in real Edge, not WebVPN.
+## When To Use
 
-The workflow has two download engines. Use the visible Edge path as the baseline and human-authentication fallback. If an already-authorized Chrome/CDP session and the `web-access-main` proxy are available, use the faster page-context fetch path for batch downloads; never treat CDP availability as a reason to bypass login or publisher checks.
+- OpenClaw already has a logged-in institutional browser context and should reuse it instead of redoing login each run.
+- The task is to download ACS, Nature, Science, or ScienceDirect PDFs into a fixed local directory.
+- The workflow should go through WebVPN-backed access and does not require opening `aTrust`.
+- The user wants Zhejiang University to be the default institution when publisher login pickers appear.
+- The user mentions `OpenClaw`, `ZJU`, `浙江大学`, `ACS`, `Nature`, `Science`, `ScienceDirect`, `机构登录`, `批量下载`, or a fixed PDF output path.
 
-## Operating Rules
+## Scope
 
-- Use AppleScript against `Microsoft Edge` in the user's existing browser session.
-- Use only the existing Edge windows and tabs the user operates.
-- Do not depend on `front window` or `active tab` until you have confirmed the target. Edge may have unrelated pages in front.
-- Enumerate Edge windows/tabs first, then bind operations to a specific window id and tab index.
-- For WebVPN's search box, keep the left protocol selector on `https` and put only the host/path in the input, for example `www.science.org/doi/10.1126/science.1096205`, `www.nature.com/articles/ncomms14183`, `www.pnas.org/doi/10.1073/pnas.1912154116`, `pubs.acs.org/doi/10.1021/acs.est.6c01242`, or `www.sciencedirect.com/science/article/pii/S0092867420302841`.
-- Click `.portal-search__button`; do not assume pressing Enter submits the WebVPN search.
-- Prefer simple JavaScript string checks such as `href.includes(...)` inside AppleScript. Avoid complex regex literals that create quoting failures.
-- Do not route APS (`journals.aps.org`) through WebVPN. WebVPN currently triggers a Cloudflare page that says the browser does not support the required security verification. Direct real Edge access works.
-- If no Edge window/session is open, stop and report the prerequisite; do not claim that a download was attempted. If optional CDP is unavailable, continue only with the real Edge path.
+- Verified fast path for ACS DOI/article pages.
+- First-class adapter for Nature DOI/article pages, including `_reference.pdf` fallback used by newer pages.
+- Exploratory adapters for Science and ScienceDirect.
+- Bundled live-download implementation uses a dedicated Edge profile configured by `.env` or environment variables.
+- Default profile path is `./.local/edge-profile`.
+- Default PDF directory is `./output/final-pdfs`.
+- Defaults institution choice to `Zhejiang University` when publisher flows require institution selection.
 
-## Locate The Target Tab
+## Quick Start
 
-List all Edge tabs:
+From OpenClaw, first ensure the logged-in browser session is valid. Then invoke the bundled scripts from the installed skill root.
 
-```bash
-osascript <<'APPLESCRIPT'
-tell application "Microsoft Edge"
-  set out to ""
-  repeat with w from 1 to count of windows
-    repeat with i from 1 to count of tabs of window w
-      set out to out & (id of window w) & tab & i & tab & (title of tab i of window w) & tab & (URL of tab i of window w) & linefeed
-    end repeat
-  end repeat
-  return out
-end tell
-APPLESCRIPT
-```
+If needed, copy `.env.example` to `.env` and adjust the local paths first.
 
-Pick a WebVPN window id and target tab. Activate it by id:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set active tab index of targetWindow to 3
-  set index of targetWindow to 1
-  activate
-end tell
-```
-
-Replace `<edge-window-id>` and `3` with the values discovered in the current session.
-
-## First Publisher Search Through WebVPN
-
-Open `https://webvpn.zju.edu.cn/` in real Edge if no WebVPN tab exists:
+Launch or reuse the dedicated browser session:
 
 ```bash
-open -a "Microsoft Edge" "https://webvpn.zju.edu.cn/"
+./scripts/launch_edge.sh
 ```
 
-If WebVPN is logged in and shows the resource page, fill the search input with a publisher host/path and click the go button:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set pagePath to "www.science.org/doi/10.1126/science.1096205"
-  set js to "(() => { const input = document.querySelector('input.portal-search__input') || Array.from(document.querySelectorAll('input')).find(el => (el.placeholder || '').includes('输入网址')); const btn = document.querySelector('.portal-search__button'); if (!input || !btn) return 'MISSING:' + !!input + ':' + !!btn; const value = '" & pagePath & "'; input.focus(); const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value'); desc.set.call(input, value); input.dispatchEvent(new Event('input', {bubbles:true})); input.dispatchEvent(new Event('change', {bubbles:true})); btn.click(); return 'CLICKED:' + input.value; })()"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-If the page asks for ZJU unified authentication, stop and ask the user to complete login in the real Edge window.
-
-## Reuse Publisher Proxy URLs
-
-After a publisher domain has been opened once through WebVPN, later pages on the same domain usually do not need another WebVPN search. Use the current proxied URL as a template.
-
-For Science/AAAS:
-
-```text
-https://webvpn.zju.edu.cn/https/<science-proxy-id>/doi/10.1126/science.1096205
-```
-
-For a new Science DOI, replace only the DOI path segment after `/doi/`:
-
-```text
-https://webvpn.zju.edu.cn/https/<science-proxy-id>/doi/10.1126/science.aab1680
-```
-
-For direct PDF download, use:
-
-```text
-https://webvpn.zju.edu.cn/https/<science-proxy-id>/doi/pdf/10.1126/science.aab1680?download=true
-```
-
-For Nature:
-
-```text
-https://webvpn.zju.edu.cn/https/<nature-proxy-id>/articles/ncomms14183
-https://webvpn.zju.edu.cn/https/<nature-proxy-id>/articles/ncomms14183.pdf
-```
-
-For PNAS:
-
-```text
-https://webvpn.zju.edu.cn/https/<pnas-proxy-id>/doi/10.1073/pnas.1912154116
-https://webvpn.zju.edu.cn/https/<pnas-proxy-id>/doi/pdf/10.1073/pnas.1912154116?download=true
-```
-
-For ACS:
-
-```text
-https://webvpn.zju.edu.cn/https/<acs-proxy-id>/doi/10.1021/acs.est.6c01242
-https://webvpn.zju.edu.cn/https/<acs-proxy-id>/doi/pdf/10.1021/acs.est.6c01242?ref=article_openPDF
-```
-
-For ScienceDirect:
-
-```text
-https://webvpn.zju.edu.cn/https/<sciencedirect-proxy-id>/science/article/pii/S0092867420302841
-```
-
-Do not assume a guessed PII exists. If a ScienceDirect PII page returns `Page not found`, the WebVPN path may still be correct; the PII itself is likely wrong.
-
-Open constructed URLs with:
+If the ACS/ZJU session has expired, open a fresh institutional login entry point:
 
 ```bash
-open -a "Microsoft Edge" "<constructed-webvpn-url>"
+./scripts/login_acs.sh "10.1021/acs.est.6c01242"
 ```
 
-## Download Science Or PNAS PDF
-
-Science and PNAS both expose the main article PDF as `/doi/pdf/<DOI>?download=true`. PNAS may also show `/doi/epdf/<DOI>` as a viewer/reader link; use `/doi/pdf/... ?download=true` for download.
-
-On a Science or PNAS article page, inspect PDF/download links before clicking:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set js to "JSON.stringify(Array.from(document.querySelectorAll('a,button,[role=button]')).map((el,i)=>({i,tag:el.tagName,text:(el.innerText||el.textContent||'').trim().replace(/\\s+/g,' ').slice(0,160),aria:el.getAttribute('aria-label')||'',title:el.getAttribute('title')||'',href:el.href||'',cls:typeof el.className === 'string' ? el.className : ''})).filter(x=>/pdf|download|下载|full text/i.test([x.text,x.aria,x.title,x.href,x.cls].join(' '))).slice(0,100))"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-Click the main PDF download link:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set doi to "10.1073/pnas.1912154116"
-  set js to "(() => { const links = Array.from(document.querySelectorAll('a')); const target = links.find(a => a.href.includes('/doi/pdf/" & doi & "') && a.href.includes('download=true')) || links.find(a => (a.innerText || '').trim() === 'Download PDF' && a.href.includes('/doi/pdf/')) || links.find(a => (a.getAttribute('aria-label') || '').toLowerCase() === 'pdf'); if (!target) return 'NO_DOWNLOAD_LINK'; target.scrollIntoView({block:'center'}); target.click(); return 'CLICKED:' + ((target.innerText || target.getAttribute('aria-label') || target.href).trim()); })()"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-Verify the download in `$HOME/Downloads`:
+Download one or more papers with publisher auto-detection:
 
 ```bash
-find "$HOME/Downloads" -maxdepth 2 \( -name '*.pdf' -o -name '*.crdownload' -o -name '*.download' \) -mmin -5 -print | sort
+python3 ./scripts/download.py \
+  10.1021/acs.est.6c01242 \
+  10.1038/ncomms14183
 ```
 
-## Download ACS PDF
-
-ACS pages use DOI paths like:
-
-```text
-https://pubs.acs.org/doi/10.1021/acs.est.6c01242
-```
-
-Through WebVPN:
-
-```text
-https://webvpn.zju.edu.cn/https/<acs-proxy-id>/doi/10.1021/acs.est.6c01242
-```
-
-The main article PDF link is the `Open PDF` button:
-
-```text
-/doi/pdf/10.1021/acs.est.6c01242?ref=article_openPDF
-```
-
-Important: do not click Supporting Information PDFs unless the user asks for supplements. ACS pages often contain many `/doi/suppl/.../suppl_file/...pdf` links such as `es6c01242_si_001.pdf`; those are not the main article.
-
-Inspect PDF-related links:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set js to "JSON.stringify(Array.from(document.querySelectorAll('a,button,[role=button]')).map((el,i)=>({i,tag:el.tagName,text:(el.innerText||el.textContent||'').trim().replace(/\\s+/g,' ').slice(0,200),aria:el.getAttribute('aria-label')||'',title:el.getAttribute('title')||'',href:el.href||'',cls:typeof el.className === 'string' ? el.className : ''})).filter(x=>/pdf|download|下载|suppl|open pdf/i.test([x.text,x.aria,x.title,x.href,x.cls].join(' '))).slice(0,140))"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-Click only the main article `Open PDF` link:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set doi to "10.1021/acs.est.6c01242"
-  set js to "(() => { const links = Array.from(document.querySelectorAll('a')); const target = links.find(a => a.href.includes('/doi/pdf/" & doi & "') && a.href.includes('ref=article_openPDF')) || links.find(a => (a.innerText || '').trim() === 'Open PDF' && a.href.includes('/doi/pdf/" & doi & "')); if (!target) return 'NO_ACS_OPEN_PDF_LINK'; target.scrollIntoView({block:'center'}); target.click(); return 'CLICKED:' + target.href; })()"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-Verify the download in `$HOME/Downloads`; ACS often saves with a title-based filename:
+Force a specific publisher adapter when needed:
 
 ```bash
-find "$HOME/Downloads" -maxdepth 2 \( -name '*.pdf' -o -name '*.crdownload' -o -name '*.download' \) -mmin -5 -print | sort
+python3 ./scripts/download.py \
+  --publisher science \
+  10.1126/science.ada1091
 ```
 
-## Download Nature PDF
-
-Nature article pages use article ids under `/articles/`:
-
-```text
-https://www.nature.com/articles/ncomms14183
-https://www.nature.com/articles/s41467-024-54358-z
-```
-
-Through WebVPN:
-
-```text
-https://webvpn.zju.edu.cn/https/<nature-proxy-id>/articles/ncomms14183
-```
-
-The main PDF is usually the same article path with `.pdf` appended:
-
-```text
-/articles/ncomms14183.pdf
-```
-
-Newer pages may still expose the same destination through a visible `Download PDF` link. Prefer matching the current article id plus `.pdf`; do not rely only on link text if recommendation cards also contain PDF links.
-
-Inspect PDF-related links:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set js to "JSON.stringify(Array.from(document.querySelectorAll('a,button,[role=button]')).map((el,i)=>({i,tag:el.tagName,text:(el.innerText||el.textContent||'').trim().replace(/\\s+/g,' ').slice(0,200),aria:el.getAttribute('aria-label')||'',title:el.getAttribute('title')||'',href:el.href||'',cls:typeof el.className === 'string' ? el.className : ''})).filter(x=>/pdf|download|下载|article/i.test([x.text,x.aria,x.title,x.href,x.cls].join(' '))).slice(0,140))"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-Click the current article PDF:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set articleId to "ncomms14183"
-  set js to "(() => { const links = Array.from(document.querySelectorAll('a')); const target = links.find(a => a.href.includes('/articles/' + '" & articleId & "' + '.pdf')) || links.find(a => (a.innerText || '').trim() === 'Download PDF' && a.href.includes('.pdf')); if (!target) return 'NO_NATURE_PDF_LINK'; target.scrollIntoView({block:'center'}); target.click(); return 'CLICKED:' + target.href; })()"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-Verify the download in `$HOME/Downloads`; Nature often saves as `<article-id>.pdf`:
+Batch from file:
 
 ```bash
-find "$HOME/Downloads" -maxdepth 2 \( -name '*ncomms14183*.pdf' -o -name '*.crdownload' -o -name '*.download' \) -mmin -5 -print | sort
+python3 ./scripts/download.py \
+  --from-file ./dois.txt
 ```
 
-## Download Supplementary Files
-
-Prefer extracting the supplementary file `href` from the article page, then opening that href directly with real Edge. For Science, PNAS, and Nature, DOM `click()` can sometimes not produce a saved file, while `open -a "Microsoft Edge" "<supplement-url>"` reliably downloads.
-
-Common patterns:
-
-- Science: `/doi/suppl/<DOI>/suppl_file/<filename>`, for example `yoon.sm.pdf`.
-- PNAS: `/doi/suppl/<DOI>/suppl_file/<filename>`, often `pnas.<id>.sapp.pdf`; other supplements can be media files such as `.mp4`.
-- ACS: `/doi/suppl/<DOI>/suppl_file/<filename>`, often `<article>_si_001.pdf`. These are Supporting Information files, not the main article.
-- Nature: `/esm/art%3A<DOI>/MediaObjects/<...>_ESM.<ext>`, for example `41467_2017_BFncomms14183_MOESM1187_ESM.pdf`.
-- ScienceDirect: `/content/image/1-s2.0-<PII>-mmcN.<ext>`, for example `1-s2.0-S0012821X20302363-mmc1.pdf`.
-
-Find candidates on the current page:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set js to "(() => { const keys = ['suppl','supplement','supplementary','supporting','materials','appendix','mediaobjects','mmc','sapp','si_','.pdf','.docx','.xlsx','.zip','.csv','.mp4']; return JSON.stringify(Array.from(document.querySelectorAll('a')).map((a,i)=>({i,text:(a.innerText||a.textContent||'').trim().replace(/\\s+/g,' ').slice(0,220),href:a.href,title:a.getAttribute('title')||'',aria:a.getAttribute('aria-label')||''})).filter(x => keys.some(k => [x.text,x.href,x.title,x.aria].join(' ').toLowerCase().includes(k))).slice(0,160)); })()"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-Open the selected supplement href directly:
+The old ACS entrypoint still works and now forwards into the new CLI:
 
 ```bash
-open -a "Microsoft Edge" "https://webvpn.zju.edu.cn/https/<publisher-proxy-id>/doi/suppl/10.1126/science.aab1680/suppl_file/yoon.sm.pdf"
+python3 ./scripts/download_dois.py \
+  10.1021/acs.est.6c01242
 ```
 
-For ScienceDirect, verify that the `mmc` filename contains the current PII. Not every ScienceDirect article has supplementary files; if no `mmc` or supplementary links appear, try another article known to have an Appendix/Supplementary data section instead of assuming the extraction failed.
+## Behavior
 
-Verify supplement downloads:
+1. Reuse a dedicated logged-in browser session on a configurable port, default `62777`.
+2. Keep institutional cookies inside the dedicated browser profile.
+3. Force PDFs to download instead of opening in-browser.
+4. Route each DOI or article URL through a publisher adapter.
+5. Keep ACS on the direct `Open PDF` fast path with ZJU SSO retry.
+6. For Nature, Science, and ScienceDirect, try adapter-specific PDF URL heuristics first and then fall back to opening the article page.
+7. For ScienceDirect DOI inputs, first try to resolve the DOI into a concrete article URL before falling back to `doi.org`.
+8. When publisher institution selection appears, prefer `Zhejiang University`.
+9. After a PDF is detected, verify the `%PDF-` header and non-trivial size before reporting success. Write the verified path, byte size, SHA-256, source URLs, and UTC verification time to `download-manifest.json`. A browser download is not workflow-complete until this record exists.
+10. To synchronize a verified result into the RSS item, run `scripts/sync_rss_pdf.py` with the exact RSS GUID/DOI. It validates the PDF first and updates the item atomically; failed validation leaves the RSS unchanged. Use `--note` when the asset is valid but not the main article, such as a Nature `reference PDF`.
 
-```bash
-find "$HOME/Downloads" -maxdepth 2 \( -name '*sm.pdf' -o -name '*sapp*' -o -name '*_si_*' -o -name '*MOESM*' -o -name '*-mmc*' -o -name '*.crdownload' -o -name '*.download' \) -mmin -10 -print | sort
-```
+## Limits
 
-## Download APS PDF Or Supplemental Material
-
-APS/Physical Review is an exception to the WebVPN pattern. Do not use WebVPN for `journals.aps.org`; it is intercepted by Cloudflare security verification through WebVPN. Use the user's normal Edge directly:
-
-```bash
-open -a "Microsoft Edge" "https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.116.061102"
-```
-
-APS article pages use journal slugs such as `prl`, `pra`, `prb`, `prd`, `pre`, and DOI paths:
-
-```text
-https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.116.061102
-```
-
-The main article PDF path is:
-
-```text
-https://journals.aps.org/prl/pdf/10.1103/PhysRevLett.116.061102
-```
-
-Supplemental material, when present, is linked from the abstract page and commonly uses:
-
-```text
-https://journals.aps.org/prl/supplemental/10.1103/PhysRevLett.132.076401/SI.pdf
-```
-
-Inspect APS PDF/supplement links on the direct page:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set js to "(() => { const keys = ['pdf','supplement','supplemental','supp','ancillary','media','.pdf','.zip']; return JSON.stringify(Array.from(document.querySelectorAll('a')).map((a,i)=>({i,text:(a.innerText||a.textContent||'').trim().replace(/\\s+/g,' ').slice(0,220),href:a.href,title:a.getAttribute('title')||'',aria:a.getAttribute('aria-label')||''})).filter(x => keys.some(k => [x.text,x.href,x.title,x.aria].join(' ').toLowerCase().includes(k))).slice(0,140)); })()"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-Open APS PDF or supplemental href directly:
-
-```bash
-open -a "Microsoft Edge" "https://journals.aps.org/prl/pdf/10.1103/PhysRevLett.116.061102"
-open -a "Microsoft Edge" "https://journals.aps.org/prl/supplemental/10.1103/PhysRevLett.132.076401/SI.pdf"
-```
-
-Verify APS downloads:
-
-```bash
-find "$HOME/Downloads" -maxdepth 2 \( -name 'PhysRev*.pdf' -o -name 'SI.pdf' -o -name '*.crdownload' -o -name '*.download' \) -mmin -10 -print | sort
-```
-
-## Download ScienceDirect PDF
-
-ScienceDirect article pages use PII-based URLs:
-
-```text
-https://www.sciencedirect.com/science/article/pii/<PII>
-```
-
-Through WebVPN, the article becomes:
-
-```text
-https://webvpn.zju.edu.cn/https/<sciencedirect-proxy-id>/science/article/pii/<PII>
-```
-
-The PDF link is not a stable `/pdf` path. It appears on the article page as a `View PDF` link whose `href` contains:
-
-```text
-/science/article/pii/<PII>/pdfft?...
-pid=1-s2.0-<PII>-main.pdf
-```
-
-Important: do not click the first link whose text is `View PDF`. ScienceDirect pages can contain recommended or related articles with their own `View PDF` links, which can download the wrong paper. Always match the current PII in both the `/pdfft` path and the `pid` filename.
-
-List candidate links for the current PII:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set pii to "S0092867420302841"
-  set js to "JSON.stringify(Array.from(document.querySelectorAll('a')).map((a,i)=>({i,text:(a.innerText||a.textContent||'').trim().replace(/\\s+/g,' ').slice(0,160),aria:a.getAttribute('aria-label')||'',href:a.href})).filter(x=>x.href.includes('" & pii & "') || x.text.includes('PDF') || x.aria.includes('PDF')).slice(0,80))"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-Click only the exact PDF link for the current PII:
-
-```applescript
-tell application "Microsoft Edge"
-  set targetWindow to first window whose id is <edge-window-id>
-  set pii to "S0092867420302841"
-  set js to "(() => { const links = Array.from(document.querySelectorAll('a')); const target = links.find(a => a.href.includes('/science/article/pii/" & pii & "/pdfft?') && a.href.includes('pid=1-s2.0-" & pii & "-main.pdf')); if (!target) return 'NO_TARGET_PDF_LINK'; target.scrollIntoView({block:'center'}); target.click(); return 'CLICKED:' + target.href; })()"
-  execute active tab of targetWindow javascript js
-end tell
-```
-
-Verify the target filename in `$HOME/Downloads`, for example:
-
-```bash
-find "$HOME/Downloads" -maxdepth 2 \( -name '1-s2.0-S0092867420302841-main.pdf' -o -name '*.crdownload' -o -name '*.download' \) -mmin -5 -print | sort
-```
-
-## Faster CDP Page-Context Download (Optional)
-
-For RSS or other definite DOI batches, prefer ZJU Summon/求是学术搜索 to discover the official `PDF`, `在线全文`, `Full Text`, or `View PDF` link. Summon is a slow SPA: wait about 6 seconds after navigation and retry link extraction at most three times. Encode the complete URL when it contains `#!`; otherwise the result can become `about:blank`.
-
-When a user-authorized Chrome session has remote debugging enabled and `web-access-main` exposes the local CDP proxy, use its `/targets`, `/new`, `/navigate`, `/info`, and `/eval` endpoints. Open the official PDF link in the authenticated tab and run page-context `fetch(url, {credentials: 'include'})`. Read the response bytes, require a `%PDF` signature, and transfer them in bounded chunks through `/eval` before writing the target file. This is browser-context retrieval, not anonymous shell scraping.
-
-Do not use this path for a page showing CAS, CAPTCHA, Cloudflare, `Are you a robot?`, institution selection, or another publisher challenge. Pause for the user and resume from the same tab after confirmation. For ScienceDirect, the current PII must appear in both the article path and the `pid=1-s2.0-<PII>-main.pdf` filename; a signed `pdf.sciencedirectassets.com` URL may expire and should be regenerated by one user re-click.
-
-If Chrome's native PDF viewer cannot be fetched from page context, mark `browser_pdf_viewer_fallback_needed`, return to the article landing page, click its visible official download control once, and verify the completed Edge/Chrome download by modification time and content. Do not loop on the viewer URL.
-
-## Batch Manifest and Verification
-
-For more than one paper, keep a TSV manifest with:
-
-```text
-id title doi year venue status pdf_path si_status si_paths source_url downloaded_at notes
-```
-
-Use explicit progress states rather than a generic failure: `downloaded`, `downloaded_with_si`, `si_only_downloaded`, `cas_waiting_user`, `institutional_login_waiting_user`, `publisher_verification_waiting_user`, `sciencedirect_robot_check`, `browser_pdf_viewer_fallback_needed`, `summon_unreachable`, `url_needs_repair`, `no_authorized_pdf_found`, `purchase_required`, and `failed_after_retry`.
-
-After every download, check that the file exists, has plausible size, starts with `%PDF`, has a nonzero page count, and contains the expected title, DOI, or supporting-information title in extracted text. Never rename an HTML login/challenge page to `.pdf`. Keep the main PDF status separate from SI; `si_only_downloaded` is not a completed paper download.
-
-Recommended batch size is 5–10 papers, with an upper practical limit of about 15–20 and pauses. Do not open large parallel bursts of publisher tabs. If Summon repeatedly returns `ERR_EMPTY_RESPONSE`, record `summon_unreachable` and try the DOI landing page or a confirmed OA route once.
-
-## Authentication Safety
-
-Never ask for or inspect passwords, cookies, session tokens, QR results, SMS/OTP values, local storage, or browser profile files. When CAS or publisher verification appears, let the user complete it in the browser. A visible CAS login button may be clicked once only when the user explicitly authorizes it, the domain is an expected institutional domain, Chrome has already filled the credentials, and no challenge or security warning is present. Otherwise stop and wait for the user.
+- This skill does not store campus credentials.
+- Science and ScienceDirect support are still less stable than ACS; do not present them as equivalent to the ACS fast path.
+- On a fresh profile or after session expiry, the first download may still need one manual WebVPN refresh, publisher login handoff, or CAPTCHA / human verification before retries succeed.
+- This repository is OpenClaw-oriented at the skill/documentation layer, but the bundled downloader implementation still uses the dedicated Edge workflow described above.
