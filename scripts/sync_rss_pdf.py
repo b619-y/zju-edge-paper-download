@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote
 from xml.sax.saxutils import escape
@@ -29,7 +30,58 @@ def verify_pdf(path: Path) -> tuple[int, str]:
     return size, digest.hexdigest()
 
 
-def sync_item(rss_path: Path, guid: str, pdf_path: Path, source_url: str | None, note: str | None) -> dict[str, object]:
+class _ArticleExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.depth = 0
+        self.capture_depth: int | None = None
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.capture_depth is None and tag == "article" and dict(attrs).get("lang") == "en":
+            self.capture_depth = self.depth
+        if self.capture_depth is not None:
+            self.parts.append(self.get_starttag_text() or f"<{tag}>")
+        self.depth += 1
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.capture_depth is not None:
+            self.parts.append(self.get_starttag_text() or f"<{tag}/>" )
+
+    def handle_endtag(self, tag: str) -> None:
+        self.depth -= 1
+        if self.capture_depth is not None:
+            self.parts.append(f"</{tag}>")
+            if tag == "article" and self.depth == self.capture_depth:
+                self.capture_depth = None
+
+    def handle_data(self, data: str) -> None:
+        if self.capture_depth is not None and self.capture_depth >= 0:
+            self.parts.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if self.capture_depth is not None and self.capture_depth >= 0:
+            self.parts.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if self.capture_depth is not None and self.capture_depth >= 0:
+            self.parts.append(f"&#{name};")
+
+    def handle_comment(self, data: str) -> None:
+        if self.capture_depth is not None and self.capture_depth >= 0:
+            self.parts.append(f"<!--{data}-->")
+
+
+def extract_article_html(path: Path) -> str:
+    parser = _ArticleExtractor()
+    parser.feed(path.read_text(encoding="utf-8"))
+    body = "".join(parser.parts).strip()
+    if len(body) < 1000:
+        raise ValueError(f"main article body not found or too short: {path}")
+    return body
+
+
+def sync_item(rss_path: Path, guid: str, pdf_path: Path, source_url: str | None, note: str | None, html_path: Path | None) -> dict[str, object]:
     size, sha256 = verify_pdf(pdf_path.resolve())
     text = rss_path.read_text(encoding="utf-8")
     item_matches = list(re.finditer(r"<item(?:\s[^>]*)?>.*?</item>", text, re.S))
@@ -45,6 +97,7 @@ def sync_item(rss_path: Path, guid: str, pdf_path: Path, source_url: str | None,
     timestamp = datetime.now(timezone.utc).isoformat()
     href = "file://" + quote(str(pdf_path.resolve()))
     source = escape(source_url or "")
+    article_html = extract_article_html(html_path) if html_path else None
     note_html = f'<p><strong>资产说明：</strong>{escape(note)}</p>\n' if note else ''
     additions = (
         f'<p><strong>PDF状态：</strong>已下载并校验（{size:,} bytes，SHA-256：{sha256}）。</p>'
@@ -62,12 +115,10 @@ def sync_item(rss_path: Path, guid: str, pdf_path: Path, source_url: str | None,
         block,
         count=1,
     )
-    block = re.sub(
-        r'(<content:encoded><!\[CDATA\[)',
-        lambda m: m.group(1) + f'<p><strong>本地PDF：</strong><a href="{href}">打开已校验 PDF</a></p>',
-        block,
-        count=1,
-    )
+    if article_html is not None:
+        block = re.sub(r'<content:encoded><!\[CDATA\[.*?\]\]></content:encoded>', lambda _: '<content:encoded><![CDATA[' + article_html + f'<p><strong>本地PDF：</strong><a href="{href}">打开已校验 PDF</a></p>]]></content:encoded>', block, count=1, flags=re.S)
+    else:
+        block = re.sub(r'(<content:encoded><!\[CDATA\[)', lambda m: m.group(1) + f'<p><strong>本地PDF：</strong><a href="{href}">打开已校验 PDF</a></p>', block, count=1)
     updated = text[:target.start()] + block + text[target.end():]
 
     fd, temp_name = tempfile.mkstemp(prefix=rss_path.name + ".", dir=rss_path.parent)
@@ -90,8 +141,9 @@ def main() -> int:
     parser.add_argument("--pdf", type=Path, required=True)
     parser.add_argument("--source-url")
     parser.add_argument("--note", help="Optional qualification, e.g. reference PDF is not the main article")
+    parser.add_argument("--fulltext-html", type=Path, help="Embed the main article element from a saved HTML page")
     args = parser.parse_args()
-    print(sync_item(args.rss.expanduser().resolve(), args.guid, args.pdf.expanduser().resolve(), args.source_url, args.note))
+    print(sync_item(args.rss.expanduser().resolve(), args.guid, args.pdf.expanduser().resolve(), args.source_url, args.note, args.fulltext_html.expanduser().resolve() if args.fulltext_html else None))
     return 0
 
 
